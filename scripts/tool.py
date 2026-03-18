@@ -3,7 +3,7 @@ import cv2
 from pathlib import Path
 
 import numpy as np
-from cellpose import metrics
+from cellpose import metrics, utils
 
 import os, shutil, owncloud
 from datetime import datetime
@@ -12,10 +12,12 @@ class CellVisualizer:
     def __init__(self, 
                  img_dir='./data/1-Images/01-Data/', 
                  ann_dir='./data/2-Annotations/02-Annotations/',
+                 nuc_dir = './data/2-Annotations/02-Annotations_Clean/',
                  proc_dir='./data/processed/'): # Ajout du dossier processed
         
         self.img_dir = Path(img_dir)
         self.ann_dir = Path(ann_dir)
+        self.nuc_dir = Path(nuc_dir)
         self.proc_dir = Path(proc_dir)
 
     def _get_path(self, folder, pattern):
@@ -29,7 +31,7 @@ class CellVisualizer:
             
         elif mode == 'Nuc':
             pattern = f"{id_unique}*Nuc.bmp"
-            p = self._get_path(self.ann_dir, pattern)
+            p = self._get_path(self.nuc_dir, pattern)
             
         elif mode == 'Cell_Pred':
             pattern = f"{id_unique}*Cell_pred.bmp"
@@ -77,39 +79,64 @@ class CellVisualizer:
         return ax
     
     def plot_overlay(self, i, mask_pred, ax=None, show=True):
-            img = self.load_data(i, mode='Image')
-            mask_true = self.load_data(i, mode='Cell')
-            if img.ndim == 3:
-                overlay = img.copy()
-            else:
-                overlay = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-            def to_cv2_bin(m):
-                if m is None: return None
-                m_bin = (m > 0).astype(np.uint8)
-                if m_bin.ndim == 3:
-                    m_bin = m_bin[:,:,0]
-                return m_bin
+        img = self.load_data(i, mode='Image')
+        mask_true = self.load_data(i, mode='Cell')
 
-            bin_true = to_cv2_bin(mask_true)
-            bin_pred = to_cv2_bin(mask_pred)
+        # 1. Normalisation du fond pour qu'il soit bien visible
+        img_8u = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        if img_8u.ndim == 2:
+            overlay = cv2.cvtColor(img_8u, cv2.COLOR_GRAY2RGB)
+        else:
+            overlay = img_8u.copy()
 
-            if bin_true is not None:
-                contours_true, _ = cv2.findContours(bin_true, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                cv2.drawContours(overlay, contours_true, -1, (0, 255, 0), 2) # Vert = Expert
-
-            if bin_pred is not None:
-                contours_pred, _ = cv2.findContours(bin_pred, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                cv2.drawContours(overlay, contours_pred, -1, (255, 0, 0), 2) # Rouge = Modèle
-        
-            if ax is None:
-                fig, ax = plt.subplots(figsize=(8,8))
-
-            ax.imshow(overlay)
-            ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
-            ax.axis('off')
+        # 2. Traceur de cellules Infaillible
+        def draw_individual_cells(mask, color, thickness=1):
+            if mask is None: return
             
-            if show: plt.show()
-            return ax
+            # SÉCURITÉ 1 : Si c'est du RGB, on fusionne tout pour ne perdre aucune cellule
+            if mask.ndim == 3: 
+                mask = np.max(mask, axis=2)
+                
+            for cell_id in np.unique(mask):
+                if cell_id == 0: continue
+                
+                # SÉCURITÉ 2 : On force OpenCV avec un vrai blanc (255)
+                single_cell = np.uint8((mask == cell_id) * 255)
+                
+                contours, _ = cv2.findContours(single_cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                cv2.drawContours(overlay, contours, -1, color, thickness)
+
+        # 3. Tracés
+        draw_individual_cells(mask_true, color=(0, 255, 0), thickness=2) # Vert = Expert
+        draw_individual_cells(mask_pred, color=(255, 0, 0), thickness=2) # Rouge = Modèle
+
+        # 4. Affichage
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8,8))
+
+        ax.imshow(overlay)
+        ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
+        ax.axis('off')
+        
+        if show: plt.show()
+        return ax
+    
+    def plot_loss(self, t_loss, v_loss, title="Courbe de Loss", ax=None, show=True):
+        """Trace les courbes d'apprentissage (Train vs Val)"""
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(5, 3))
+            
+        ax.plot(t_loss, label='Train Loss', color='blue', marker='o', markersize=4)
+        ax.plot(v_loss, label='Test Loss (Val)', color='orange', marker='s', markersize=4)
+        
+        ax.set_title(title)
+        ax.set_xlabel("Epochs")
+        ax.set_ylabel("Loss")
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.7)
+        
+        if show: plt.show()
+        return ax
 
 class Owncloud:
     def __init__(self, client):
@@ -132,6 +159,24 @@ class Owncloud:
         self.oc.put_file(f"{path}{name}.zip", f"{name}.zip")
         os.remove(f"{name}.zip")
         print(f"Envoyé: {name}.zip")
+
+    def download_path(self, local_path, cloud_dest):
+            """Zippe un dossier local et l'envoie sur le Cloud"""
+            # 1. On définit le nom du zip à partir du dossier
+            name = os.path.basename(local_path.rstrip('/'))
+            
+            # 2. On zippe
+            shutil.make_archive(name, 'zip', local_path)
+            
+            # 3. On s'assure que le dossier de destination existe sur le Cloud
+            try: self.oc.mkdir(os.path.dirname(cloud_dest))
+            except: pass
+            
+            # 4. Envoi (ta commande fétiche) et nettoyage
+            self.oc.put_file(f"{cloud_dest}.zip", f"{name}.zip")
+            os.remove(f"{name}.zip")
+            
+            print(f"✅ Dossier {name} envoyé vers {cloud_dest}.zip")
 
 
 class Stats:
