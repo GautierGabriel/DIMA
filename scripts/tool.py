@@ -12,9 +12,8 @@ class CellVisualizer:
     def __init__(self, 
                  img_dir='./data/1-Images/01-Data/', 
                  ann_dir='./data/2-Annotations/02-Annotations/',
-                 nuc_dir = './data/2-Annotations/02-Annotations_Clean/',
-                 proc_dir='./data/processed/'): # Ajout du dossier processed
-        
+                 nuc_dir = './data/02-Annotations_Clean/',
+                 proc_dir='./data/processed/'):
         self.img_dir = Path(img_dir)
         self.ann_dir = Path(ann_dir)
         self.nuc_dir = Path(nuc_dir)
@@ -47,6 +46,31 @@ class CellVisualizer:
         
         return cv2.imread(str(p), cv2.IMREAD_UNCHANGED) if p else None
     
+    def load_set_channel(self, ids): 
+        X, Y = [], []
+        for i in ids:
+            img = self.load_data(i, 'Image') 
+            mask_cell = self.load_data(i, 'Cell')
+            mask_nuc_clean = self.load_data(i, 'Nuc')
+
+            if mask_cell.ndim == 3: mask_cell = mask_cell[:,:,0]
+            if mask_nuc_clean.ndim == 3: mask_nuc_clean = mask_nuc_clean[:,:,0]
+            
+            img_stacked = np.stack([img, img], axis=-1) 
+            mask_stacked = np.stack([mask_cell, mask_nuc_clean], axis=0) 
+            
+            X.append(img_stacked)
+            Y.append(mask_stacked)
+            
+        return X, Y
+    
+
+    # Fonction utilitaire de chargement
+    def load_set(self, ids):
+        X = [self.load_data(i, 'Image') for i in ids]
+        Y = [self.load_data(i, 'Cell')[:,:,0] for i in ids]
+        return X, Y
+
     def plot(self, i=None, data=None, mode='Image', show=True, ax=None, title=None):
         """
         Affiche ou retourne un graphique les images et les masques
@@ -162,21 +186,17 @@ class Owncloud:
 
     def download_path(self, local_path, cloud_dest):
             """Zippe un dossier local et l'envoie sur le Cloud"""
-            # 1. On définit le nom du zip à partir du dossier
             name = os.path.basename(local_path.rstrip('/'))
             
-            # 2. On zippe
             shutil.make_archive(name, 'zip', local_path)
             
-            # 3. On s'assure que le dossier de destination existe sur le Cloud
             try: self.oc.mkdir(os.path.dirname(cloud_dest))
             except: pass
             
-            # 4. Envoi (ta commande fétiche) et nettoyage
             self.oc.put_file(f"{cloud_dest}.zip", f"{name}.zip")
             os.remove(f"{name}.zip")
             
-            print(f"✅ Dossier {name} envoyé vers {cloud_dest}.zip")
+            print(f"Dossier {name} envoyé vers {cloud_dest}.zip")
 
 
 class Stats:
@@ -196,7 +216,6 @@ class Stats:
         for m in [mask_true, mask_pred]: 
             if m is not None:
                 vals = np.unique(m)
-                # On crée une map : l'ancienne valeur devient son rang dans la liste
                 for i, v in enumerate(vals):
                     m[m == v] = i
 
