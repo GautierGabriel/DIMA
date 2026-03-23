@@ -66,9 +66,9 @@ class CellVisualizer:
         return img
 
     # Fonction utilitaire de chargement
-    def load_set(self, ids):
+    def load_set(self, ids, mode='Cell'):
         X = [self.load_data(i, 'Image') for i in ids]
-        Y = [self.load_data(i, 'Cell') for i in ids]
+        Y = [self.load_data(i, mode) for i in ids]
         return X, Y
 
     def plot(self, i=None, data=None, mode='Image', show=True, ax=None, title=None):
@@ -145,9 +145,9 @@ class CellVisualizer:
     #     if show: plt.show()
     #     return ax
 
-    def plot_overlay(self, i, mask_pred, ax=None, show=True):
+    def plot_overlay(self, i, mask_pred, ax=None, show=True, mode='Cell'):
         img = self.load_data(i, mode='Image')
-        mask_true = self.load_data(i, mode='Cell')
+        mask_true = self.load_data(i, mode=mode)
 
         img_rgb = cv2.cvtColor(cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U), cv2.COLOR_GRAY2RGB)
 
