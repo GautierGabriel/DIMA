@@ -104,11 +104,22 @@ class CellVisualizer:
             
         return X, Y
 
-    # Fonction utilitaire de chargement
     def load_set(self, ids, mode='Cell'):
-        X = [self.load_data(i, 'Image') for i in ids]
-        Y = [self.load_data(i, mode) for i in ids]
+        X = []
+        Y = []
+        
+        for i in ids:
+            # Chargement et normalisation de l'image
+            img = self.load_data(i, 'Image')
+            img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            X.append(img_norm)
+            
+            # Chargement du masque correspondant
+            mask = self.load_data(i, mode)
+            Y.append(mask)
+            
         return X, Y
+  
 
     def plot(self, i=None, data=None, mode='Image', show=True, ax=None, title=None):
         """
