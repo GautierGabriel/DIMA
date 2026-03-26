@@ -7,17 +7,20 @@ from cellpose import metrics, utils
 
 import os, shutil, owncloud
 from datetime import datetime
+from scipy import ndimage
 
 class CellVisualizer:
     def __init__(self, 
                  img_dir='./data/1-Images/01-Data/', 
                  ann_dir='./data/2-Annotations/02-Annotations/',
                  nuc_dir = './data/02-Annotations_Clean/',
-                 proc_dir='./data/processed/'):
+                 nuc_pred_dir='./data/prediction/cellpose_nuclei_200_train/masks/',
+                 cell_pred_dir='./data/prediction/cellpose4_50/'):
         self.img_dir = Path(img_dir)
         self.ann_dir = Path(ann_dir)
         self.nuc_dir = Path(nuc_dir)
-        self.proc_dir = Path(proc_dir)
+        self.nuc_pred_dir = Path(nuc_pred_dir)
+        self.cell_pred_dir = Path(cell_pred_dir)
 
     def _get_path(self, folder, pattern):
         return next(folder.rglob(pattern))
@@ -34,11 +37,11 @@ class CellVisualizer:
             
         elif mode == 'Cell_Pred':
             pattern = f"{id_unique}*Cell_pred.bmp"
-            p = self._get_path(self.proc_dir, pattern)
+            p = self._get_path(self.cell_pred_dir, pattern)
             
         elif mode == 'Nuc_Pred':
             pattern = f"{id_unique}*Nuc_pred.bmp"
-            p = self._get_path(self.proc_dir, pattern)
+            p = self._get_path(self.nuc_pred_dir, pattern)
 
         else: # Image
             pattern = f"{id_unique}*"
@@ -64,6 +67,42 @@ class CellVisualizer:
             return new_mask
             
         return img
+
+    def load_channel(self, ids, mode='raw'):
+        """
+        Prépare les données multi-canaux (2, H, W) pour Cellpose.
+        Modes disponibles : 
+        - 'raw' : Duplication de l'image biphoton.
+        - 'clahe' : Amélioration de contraste locale sur le second canal.
+        - 'Nuc_Pred' : Utilisation des masques de noyaux prédits transformés en EDT.
+        """
+        X = []
+        Y = [self.load_data(i, 'Cell') for i in ids]
+        
+        for i in ids:
+            img = self.load_data(i, 'Image')
+            img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            
+            if mode == 'raw':
+                ch2 = img_norm
+                
+            elif mode == 'clahe':
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                ch2 = clahe.apply(img_norm)
+                
+            elif mode == 'Nuc_Pred':
+                nuc_mask = self.load_data(i, mode='Nuc_Pred')
+                binary_nuc = (nuc_mask > 0).astype(np.uint8)
+                
+                if binary_nuc.max() > 0:
+                    edt = ndimage.distance_transform_edt(binary_nuc)
+                    ch2 = cv2.normalize(edt, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                else:
+                    ch2 = np.zeros_like(img_norm)
+        
+            X.append(np.stack([img_norm, ch2], axis=0))
+            
+        return X, Y
 
     # Fonction utilitaire de chargement
     def load_set(self, ids, mode='Cell'):
@@ -163,6 +202,7 @@ class CellVisualizer:
 
         if ax is None: fig, ax = plt.subplots()
         ax.imshow(overlay)
+        ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
         ax.axis('off')
         if show: plt.show()
     
@@ -249,6 +289,33 @@ class Stats:
         
         f1 = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
         return {"f1": float(f1), "ap": float(ap), "tp": int(tp), "fp": int(fp), "fn": int(fn)}
+    
+    def plot_f1_vs_iou(self, mask_true, mask_pred, thresholds=np.arange(0.5, 1.05, 0.05), ax=None, show=True):
+        """
+        Génère la courbe du F1-Score en fonction de l'exigence géométrique (IoU).
+        """
+        f1_scores = []
+        
+        # Itération sur la plage de tolérance
+        for thresh in thresholds:
+            perf = self.summary_perf(mask_true, mask_pred, iou_threshold=thresh)
+            f1_scores.append(perf["f1"])
+            
+        # Création ou récupération de l'axe de tracé
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            
+        ax.plot(thresholds, f1_scores, marker='o', linewidth=2)
+        
+        ax.set_xlabel('Seuil de tolérance (IoU)')
+        ax.set_ylabel('F1-Score')
+        ax.set_xlim(0.45, 1.05)
+        ax.set_ylim(0.0, 1.05)
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.legend()
+        
+        if show:
+            plt.show()
 
     def report(self, name, mask_true, mask_pred, show = True):
         res = self.summary_perf(mask_true, mask_pred)
