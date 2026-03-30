@@ -1,0 +1,11 @@
+==================================================
+RESULTATS GLOBAUX : Cellpose cyto4 clahe
+==================================================
+Images evaluees          : 10
+Total Vrais Positifs (TP): 265
+Total Faux Positifs (FP) : 55
+Total Faux Negatifs (FN) : 24
+--------------------------------------------------
+F1-Score Global (Micro)  : 0.870
+F1-Score Moyen (Macro)   : 0.871
+==================================================

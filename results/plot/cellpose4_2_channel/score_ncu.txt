@@ -1,0 +1,12 @@
+==================================================
+RESULTATS GLOBAUX : Cellpose cyto4 Nuc_Pred
+==================================================
+Images evaluees          : 10
+Total Vrais Positifs (TP): 241
+Total Faux Positifs (FP) : 40
+Total Faux Negatifs (FN) : 48
+--------------------------------------------------
+F1-Score Global (Micro)  : 0.846
+F1-Score Moyen (Macro)   : 0.849
+==================================================
+
