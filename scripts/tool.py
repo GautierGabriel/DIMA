@@ -89,6 +89,14 @@ class CellVisualizer:
             elif mode == 'clahe':
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                 ch2 = clahe.apply(img_norm)
+
+            elif mode == 'top_hat':
+                kernel_size = 31 
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+                
+                creux_isoles = cv2.morphologyEx(img_norm, cv2.MORPH_BLACKHAT, kernel)
+                
+                ch2 = cv2.normalize(creux_isoles, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
                 
             elif mode == 'Nuc_Pred':
                 nuc_mask = self.load_data(i, mode='Nuc_Pred')
