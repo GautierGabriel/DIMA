@@ -1,0 +1,12 @@
+
+==================================================
+RESULTATS GLOBAUX : Cellpose3 nuclei
+==================================================
+Images evaluees          : 10
+Total Vrais Positifs (TP): 253
+Total Faux Positifs (FP) : 41
+Total Faux Negatifs (FN) : 80
+--------------------------------------------------
+F1-Score Global (Micro)  : 0.807
+F1-Score Moyen (Macro)   : 0.810
+==================================================
