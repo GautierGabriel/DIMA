@@ -1,0 +1,11 @@
+==================================================
+RESULTATS GLOBAUX : Cellpose cyto4 top_hat
+==================================================
+Images evaluees          : 10
+Total Vrais Positifs (TP): 268
+Total Faux Positifs (FP) : 66
+Total Faux Negatifs (FN) : 21
+--------------------------------------------------
+F1-Score Global (Micro)  : 0.860
+F1-Score Moyen (Macro)   : 0.864
+==================================================

@@ -1,0 +1,14 @@
+
+Report pour Flow: 0.5 | CellProb: -0.6 :
+
+==================================================
+RESULTATS GLOBAUX : cyto4_40_n4_top_hat - Flow: 0.5 | CellProb: -0.6
+==================================================
+Images evaluees          : 10
+Total Vrais Positifs (TP): 275
+Total Faux Positifs (FP) : 82
+Total Faux Negatifs (FN) : 14
+--------------------------------------------------
+F1-Score Global (Micro)  : 0.851
+F1-Score Moyen (Macro)   : 0.856
+==================================================

@@ -1,0 +1,14 @@
+
+Report pour Flow: 0.5 | CellProb: -0.7 :
+
+==================================================
+RESULTATS GLOBAUX : cyto4_50 - Flow: 0.5 | CellProb: -0.7
+==================================================
+Images evaluees          : 10
+Total Vrais Positifs (TP): 277
+Total Faux Positifs (FP) : 78
+Total Faux Negatifs (FN) : 12
+--------------------------------------------------
+F1-Score Global (Micro)  : 0.860
+F1-Score Moyen (Macro)   : 0.864
+==================================================

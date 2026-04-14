@@ -8,6 +8,7 @@ from cellpose import metrics, utils
 import os, shutil, owncloud
 from datetime import datetime
 from scipy import ndimage
+from skimage import morphology, exposure, util
 
 class CellVisualizer:
     def __init__(self, 
@@ -91,12 +92,9 @@ class CellVisualizer:
                 ch2 = clahe.apply(img_norm)
 
             elif mode == 'top_hat':
-                kernel_size = 31 
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-                
-                creux_isoles = cv2.morphologyEx(img_norm, cv2.MORPH_BLACKHAT, kernel)
-                
-                ch2 = cv2.normalize(creux_isoles, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                creux_norm = morphology.area_closing(img_norm, area_threshold=500)
+
+                ch2 = creux_norm - img_norm
                 
             elif mode == 'Nuc_Pred':
                 nuc_mask = self.load_data(i, mode='Nuc_Pred')
@@ -311,30 +309,76 @@ class Stats:
     
     def plot_f1_vs_iou(self, mask_true, mask_pred, thresholds=np.arange(0.5, 1.05, 0.05), ax=None, show=True):
         """
-        Génère la courbe du F1-Score en fonction de l'exigence géométrique (IoU).
+        Génère la courbe du F1-Score et des Faux Négatifs (FN) en fonction de l'exigence géométrique (IoU).
+        Compatible avec une image unique (2D) ou une liste d'images (3D).
+        Attend un tuple de deux axes : ax=(ax_f1, ax_fn).
         """
         f1_scores = []
+        fn_counts = []
+        
+        # Vérification du type d'entrée (Batch vs Image unique)
+        is_batch = isinstance(mask_true, list) or (isinstance(mask_true, np.ndarray) and mask_true.ndim == 3)
         
         # Itération sur la plage de tolérance
         for thresh in thresholds:
-            perf = self.summary_perf(mask_true, mask_pred, iou_threshold=thresh)
-            f1_scores.append(perf["f1"])
-            
-        # Création ou récupération de l'axe de tracé
+            if is_batch:
+                total_tp, total_fp, total_fn = 0, 0, 0
+                
+                # Calcul des métriques image par image
+                for mt, mp in zip(mask_true, mask_pred):
+                    perf = self.summary_perf(mt, mp, iou_threshold=thresh)
+                    total_tp += perf['tp']
+                    total_fp += perf['fp']
+                    total_fn += perf['fn']
+                    
+                # Calcul du F1-Score global pour le seuil courant
+                if (total_tp + total_fp + total_fn) > 0:
+                    precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
+                    recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
+                    f1_global = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+                else:
+                    f1_global = 0.0
+                    
+                f1_scores.append(f1_global)
+                fn_counts.append(total_fn)
+                
+            else:
+                # Comportement original pour une image unique
+                perf = self.summary_perf(mask_true, mask_pred, iou_threshold=thresh)
+                f1_scores.append(perf["f1"])
+                fn_counts.append(perf["fn"])
+                
+        # Création ou récupération des axes de tracé
         if ax is None:
-            fig, ax = plt.subplots(figsize=(8, 5))
+            fig, (ax_f1, ax_fn) = plt.subplots(1, 2, figsize=(16, 5))
+            ax_f1.set_title("F1-Score vs IoU")
+            ax_fn.set_title("Faux Négatifs vs IoU")
+        else:
+            # Dépaquetage du tuple d'axes
+            ax_f1, ax_fn = ax
             
-        ax.plot(thresholds, f1_scores, marker='o', linewidth=2)
+        # Tracé des courbes (conservation de la couleur entre les deux graphiques)
+        line, = ax_f1.plot(thresholds, f1_scores, marker='o', linewidth=2)
+        ax_fn.plot(thresholds, fn_counts, marker='s', linestyle='--', linewidth=2, color=line.get_color())
         
-        ax.set_xlabel('Seuil de tolérance (IoU)')
-        ax.set_ylabel('F1-Score')
-        ax.set_xlim(0.45, 1.05)
-        ax.set_ylim(0.0, 1.05)
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.legend()
+        # Formatage du graphique F1
+        ax_f1.set_xlabel('Seuil de tolérance (IoU)')
+        ax_f1.set_ylabel('F1-Score')
+        ax_f1.set_xlim(0.45, 1.05)
+        ax_f1.set_ylim(0.0, 1.05)
+        ax_f1.grid(True, linestyle='--', alpha=0.7)
+        
+        # Formatage du graphique FN
+        ax_fn.set_xlabel('Seuil de tolérance (IoU)')
+        ax_fn.set_ylabel('Total Faux Négatifs (FN)')
+        ax_fn.set_xlim(0.45, 1.05)
+        ax_fn.grid(True, linestyle='--', alpha=0.7)
         
         if show:
+            ax_f1.legend()
+            plt.tight_layout()
             plt.show()
+        
 
     def report(self, name, mask_true, mask_pred, show = True):
         res = self.summary_perf(mask_true, mask_pred)
