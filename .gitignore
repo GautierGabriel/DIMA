@@ -2,3 +2,8 @@ data/
 .env
 __pycache__/
 .ipynb_checkpoints/
+03-Base complète SG/
+04-Base complète SB/
+processed/
+model_storage/
+models/

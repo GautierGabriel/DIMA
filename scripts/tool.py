@@ -9,6 +9,7 @@ import os, shutil, owncloud
 from datetime import datetime
 from scipy import ndimage
 from skimage import morphology, exposure, util
+import pandas as pd
 
 class CellVisualizer:
     def __init__(self, 
@@ -306,6 +307,59 @@ class Stats:
         
         f1 = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
         return {"f1": float(f1), "ap": float(ap), "tp": int(tp), "fp": int(fp), "fn": int(fn)}
+    
+    def compute_points_metrics(image_name, mask_pred, df_annotations):
+        """
+        Calcule les métriques pour une image donnée.
+        
+        image_name : str, nom du fichier image tel qu'inscrit dans le CSV
+        mask_pred : np.array, masque de segmentation (labels uniques par noyau)
+        df_annotations : pd.DataFrame, le contenu complet du fichier CSV ImageJ
+        """
+        # 1. Extraction des points pour cette image spécifique
+        points = df_annotations[df_annotations['Image'] == image_name][['X', 'Y']].values
+        
+        if len(points) == 0:
+            num_preds = len(np.unique(mask_pred)) - 1
+            return {"tp": 0, "fp": num_preds, "fn": 0, "f1": 0.0}
+
+        # 2. Identification des TP et FN
+        tp = 0
+        fn = 0
+        labels_detected = set()
+        
+        for x, y in points:
+            # Conversion coordonnées ImageJ (float) vers indices NumPy (int)
+            # Note : X = colonne, Y = ligne
+            row, col = int(round(y)), int(round(x))
+            
+            # Vérification des limites de l'image
+            if 0 <= row < mask_pred.shape[0] and 0 <= col < mask_pred.shape[1]:
+                label = mask_pred[row, col]
+                if label > 0:
+                    if label not in labels_detected:
+                        tp += 1
+                        labels_detected.add(label)
+                else:
+                    fn += 1
+            else:
+                fn += 1 # Point hors cadre considéré comme non détecté
+
+        # 3. Identification des FP
+        # Total des objets prédits moins ceux qui ont été validés par un point
+        total_pred_labels = len(np.unique(mask_pred)) - 1
+        fp = max(0, total_pred_labels - len(labels_detected))
+
+        # 4. Calcul du score F1
+        f1 = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
+        
+        return {
+            "image": image_name,
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "f1": f1
+        }
     
     def plot_f1_vs_iou(self, mask_true, mask_pred, thresholds=np.arange(0.5, 1.05, 0.05), ax=None, show=True):
         """
