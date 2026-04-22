@@ -13,22 +13,29 @@ import pandas as pd
 
 class CellVisualizer:
     def __init__(self, 
-                 img_dir='./data/1-Images/01-Data/', 
+                #  img_dir='./data/1-Images/01-Data/', 
+                #  img_dir='./data/03-Base test SG/',
+                 img_dir='./data/04-Base complète SB/',
                  ann_dir='./data/2-Annotations/02-Annotations/',
                  nuc_dir = './data/02-Annotations_Clean/',
                  nuc_pred_dir='./data/prediction/cellpose_nuclei_200_train/masks/',
-                 cell_pred_dir='./data/prediction/cellpose4_50/'):
+                 cell_pred_dir='./data/prediction/cellpose4_50/',
+                 z_stack_dir='./data/05-Z-Stacks/'):
         self.img_dir = Path(img_dir)
         self.ann_dir = Path(ann_dir)
         self.nuc_dir = Path(nuc_dir)
         self.nuc_pred_dir = Path(nuc_pred_dir)
         self.cell_pred_dir = Path(cell_pred_dir)
+        self.z_stack_dir = Path(z_stack_dir)
 
     def _get_path(self, folder, pattern):
-        return next(folder.rglob(pattern))
+        try:
+            return next(folder.rglob(pattern))
+        except StopIteration:
+            return None
     
 
-    def load_data(self, id_unique, mode='Image'):
+    def load_data(self, id_unique, mode='Image', z_level=None):
         if mode == 'Cell':
             pattern = f"{id_unique}*Cell.bmp"
             p = self._get_path(self.ann_dir, pattern)
@@ -44,6 +51,10 @@ class CellVisualizer:
         elif mode == 'Nuc_Pred':
             pattern = f"{id_unique}*Nuc_pred.bmp"
             p = self._get_path(self.nuc_pred_dir, pattern)
+        
+        elif mode == 'Z':
+            pattern = f"{id_unique}*c{z_level}*"
+            p = self._get_path(self.z_stack_dir, pattern)
 
         else: # Image
             pattern = f"{id_unique}*"
@@ -70,16 +81,18 @@ class CellVisualizer:
             
         return img
 
-    def load_channel(self, ids, mode='raw'):
+    def load_channel(self, ids, mode='raw', annotation = True):
         """
         Prépare les données multi-canaux (2, H, W) pour Cellpose.
         Modes disponibles : 
         - 'raw' : Duplication de l'image biphoton.
         - 'clahe' : Amélioration de contraste locale sur le second canal.
         - 'Nuc_Pred' : Utilisation des masques de noyaux prédits transformés en EDT.
+        - 'top_hat' : Soustraction d'une ouverture morphologique pour faire ressortir les objets sombres.
         """
         X = []
-        Y = [self.load_data(i, 'Cell') for i in ids]
+        if annotation:
+            Y = [self.load_data(i, 'Cell') for i in ids]
         
         for i in ids:
             img = self.load_data(i, 'Image')
@@ -109,11 +122,12 @@ class CellVisualizer:
         
             X.append(np.stack([img_norm, ch2], axis=0))
             
-        return X, Y
+        return (X, Y) if annotation else X
 
-    def load_set(self, ids, mode='Cell'):
+    def load_set(self, ids, mode='Cell', annotation = True):
         X = []
-        Y = []
+        if annotation:
+            Y = []
         
         for i in ids:
             # Chargement et normalisation de l'image
@@ -122,10 +136,22 @@ class CellVisualizer:
             X.append(img_norm)
             
             # Chargement du masque correspondant
-            mask = self.load_data(i, mode)
-            Y.append(mask)
+            if annotation:
+                mask = self.load_data(i, mode)
+                Y.append(mask)
             
-        return X, Y
+        return (X, Y) if annotation else X
+    
+
+    def load_set_z(self, ids, z_level):
+        X = []
+        
+        for i in ids:
+            img = self.load_data(i, 'Z', z_level=z_level)
+            img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            X.append(img_norm)
+  
+        return X
   
 
     def plot(self, i=None, data=None, mode='Image', show=True, ax=None, title=None):
@@ -159,71 +185,75 @@ class CellVisualizer:
 
         return ax
     
-    # def plot_overlay(self, i, mask_pred, ax=None, show=True):
-    #     img = self.load_data(i, mode='Image')
-    #     mask_true = self.load_data(i, mode='Cell')
-
-    #     # 1. Normalisation du fond pour qu'il soit bien visible
-    #     img_8u = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    #     if img_8u.ndim == 2:
-    #         overlay = cv2.cvtColor(img_8u, cv2.COLOR_GRAY2RGB)
-    #     else:
-    #         overlay = img_8u.copy()
-
-    #     # 2. Traceur de cellules Infaillible
-    #     def draw_individual_cells(mask, color, thickness=1):
-    #         if mask is None: return
+    def add_contours(self, overlay, mask, color):
+        # Sécurité vitale si on passe un mask vide
+        if mask is None: 
+            return 
             
-    #         # SÉCURITÉ 1 : Si c'est du RGB, on fusionne tout pour ne perdre aucune cellule
-    #         if mask.ndim == 3: 
-    #             mask = np.max(mask, axis=2)
-                
-    #         for cell_id in np.unique(mask):
-    #             if cell_id == 0: continue
-                
-    #             # SÉCURITÉ 2 : On force OpenCV avec un vrai blanc (255)
-    #             single_cell = np.uint8((mask == cell_id) * 255)
-                
-    #             contours, _ = cv2.findContours(single_cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    #             cv2.drawContours(overlay, contours, -1, color, thickness)
+        for l in np.unique(mask):
+            if l == 0: continue
+            contours, _ = cv2.findContours((mask==l).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(overlay, contours, -1, color, 1)
+    
 
-    #     # 3. Tracés
-    #     draw_individual_cells(mask_true, color=(0, 255, 0), thickness=2) # Vert = Expert
-    #     draw_individual_cells(mask_pred, color=(255, 0, 0), thickness=2) # Rouge = Modèle
-
-    #     # 4. Affichage
-    #     if ax is None:
-    #         fig, ax = plt.subplots(figsize=(8,8))
-
-    #     ax.imshow(overlay)
-    #     ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
-    #     ax.axis('off')
-        
-    #     if show: plt.show()
-    #     return ax
-
-    def plot_overlay(self, i, mask_pred, ax=None, show=True, mode='Cell'):
+    def plot_overlay(self, i, mask_pred=None, ax=None, show=True, mode='Cell', annotation=True, prediction=True):
         img = self.load_data(i, mode='Image')
-        mask_true = self.load_data(i, mode=mode)
-
         img_rgb = cv2.cvtColor(cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U), cv2.COLOR_GRAY2RGB)
-
-        def add_contours(overlay, mask, color):
-            for l in np.unique(mask):
-                if l == 0: continue
-                contours, _ = cv2.findContours((mask==l).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                cv2.drawContours(overlay, contours, -1, color, 1)
-
         overlay = img_rgb.copy()
-        add_contours(overlay, mask_true, (0, 255, 0))
-        add_contours(overlay, mask_pred, (255, 0, 0)) 
 
-        if ax is None: fig, ax = plt.subplots()
+        if annotation:
+            mask_true = self.load_data(i, mode=mode)
+            self.add_contours(overlay, mask_true, (0, 255, 0))
+
+        # Ajout de la sécurité : on trace seulement si on a demandé la prédiction ET qu'on a fourni un masque
+        if prediction and mask_pred is not None:
+            self.add_contours(overlay, mask_pred, (255, 0, 0)) 
+
+        if ax is None: 
+            fig, ax = plt.subplots()
+
         ax.imshow(overlay)
-        ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
+        
+        if annotation and prediction:
+            ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
+        elif not annotation and prediction:
+            ax.set_title(f"Overlay {i} : Prediction (Rouge)")
+        else:
+            ax.set_title(f"Overlay {i} : annotation expert (Vert)")
+            
         ax.axis('off')
         if show: plt.show()
-    
+
+
+    def plot_points_overlay(self, i, df_annotations=None, mask_pred=None, ax=None, show=True, annotation=True, prediction=True):
+        img = self.load_data(i, mode='Image')
+        overlay = cv2.cvtColor(cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U), cv2.COLOR_GRAY2RGB)
+        
+        if annotation and df_annotations is not None:
+            points = df_annotations[df_annotations['Image'].astype(str).str.startswith(str(i))][['X', 'Y']].values
+            for x, y in points:
+                cv2.circle(overlay, (int(x), int(y)), 3, (0, 255, 0), -1)
+
+        # Ajout de la sécurité
+        if prediction and mask_pred is not None:
+            self.add_contours(overlay, mask_pred, (255, 0, 0))
+
+        # Correction : Initialisation de l'axe s'il n'est pas fourni
+        if ax is None: 
+            fig, ax = plt.subplots()
+
+        ax.imshow(overlay)
+        
+        if annotation and prediction:
+            ax.set_title(f"Overlay {i} : Expert (Vert) vs Pred (Rouge)")
+        elif not annotation and prediction:
+            ax.set_title(f"Overlay {i} : Prediction (Rouge)")
+        else:
+            ax.set_title(f"Overlay {i} : annotation expert (Vert)")
+            
+        ax.axis('off')
+        if show: plt.show()
+
     def plot_loss(self, t_loss, v_loss, title="Courbe de Loss", ax=None, show=True):
         """Trace les courbes d'apprentissage (Train vs Val)"""
         if ax is None:
@@ -433,13 +463,6 @@ class Stats:
             plt.tight_layout()
             plt.show()
         
-
-    def report(self, name, mask_true, mask_pred, show = True):
-        res = self.summary_perf(mask_true, mask_pred)
-        if show:
-            print(f"[{name}] F1: {res['f1']:.3f} | TP: {res['tp']} | FN: {res['fn']}")
-        return res
-
     def global_report(self, results_list, model_name="Modèle"):
         """
         Agrège les résultats, affiche les statistiques globales et trace les graphiques d'analyse.
