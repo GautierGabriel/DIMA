@@ -14,13 +14,13 @@ import pandas as pd
 class CellVisualizer:
     def __init__(self, 
                 #  img_dir='./data/1-Images/01-Data/', 
-                #  img_dir='./data/03-Base test SG/',
-                 img_dir='./data/04-Base complète SB/',
-                 ann_dir='./data/2-Annotations/02-Annotations/',
+                img_dir='./data/03-Base complète SG/',
+                #  img_dir='./data/04-Base complète SB/',
+                 ann_dir='./data/2-Annotations/02-Annotations-clean/',
                  nuc_dir = './data/02-Annotations_Clean/',
                  nuc_pred_dir='./data/prediction/cellpose_nuclei_200_train/masks/',
                  cell_pred_dir='./data/prediction/cellpose4_50/',
-                 z_stack_dir='./data/05-Z-Stacks/'):
+                 z_stack_dir='./data/05-Stacks 3D/'):
         self.img_dir = Path(img_dir)
         self.ann_dir = Path(ann_dir)
         self.nuc_dir = Path(nuc_dir)
@@ -35,25 +35,25 @@ class CellVisualizer:
             return None
     
 
-    def load_data(self, id_unique, mode='Image', z_level=None):
-        if mode == 'Cell':
+    def load_data(self, id_unique, target='Image', z_level=None):
+        if target == 'Cell':
             pattern = f"{id_unique}*Cell.bmp"
             p = self._get_path(self.ann_dir, pattern)
             
-        elif mode == 'Nuc':
+        elif target == 'Nuc':
             pattern = f"{id_unique}*Nuc.bmp"
             p = self._get_path(self.nuc_dir, pattern)
             
-        elif mode == 'Cell_Pred':
+        elif target == 'Cell_Pred':
             pattern = f"{id_unique}*Cell_pred.bmp"
             p = self._get_path(self.cell_pred_dir, pattern)
             
-        elif mode == 'Nuc_Pred':
+        elif target == 'Nuc_Pred':
             pattern = f"{id_unique}*Nuc_pred.bmp"
             p = self._get_path(self.nuc_pred_dir, pattern)
         
-        elif mode == 'Z':
-            pattern = f"{id_unique}*c{z_level}*"
+        elif target == 'Z':
+            pattern = f"{id_unique}*z{int(z_level):03d}*"
             p = self._get_path(self.z_stack_dir, pattern)
 
         else: # Image
@@ -64,7 +64,7 @@ class CellVisualizer:
         if img is None: return None
 
         # SI C'EST UN MASQUE ET QU'IL EST EN COULEUR (RGB)
-        if mode in ['Cell', 'Nuc', 'Cell_Pred', 'Nuc_Pred'] and img.ndim == 3:
+        if target in ['Cell', 'Nuc', 'Cell_Pred', 'Nuc_Pred'] and img.ndim == 3:
             # On transforme le RGB en un ID unique de 24 bits (R + G*256 + B*256^2)
             # C'est la méthode la plus sûre pour ne perdre aucune cellule BMP
             label_img = img[:,:,0].astype(np.int32) + \
@@ -81,7 +81,7 @@ class CellVisualizer:
             
         return img
 
-    def load_channel(self, ids, mode='raw', annotation = True):
+    def load_channel(self, ids, mode='raw', target = 'Image', annotation = True, z_level=None):
         """
         Prépare les données multi-canaux (2, H, W) pour Cellpose.
         Modes disponibles : 
@@ -95,7 +95,7 @@ class CellVisualizer:
             Y = [self.load_data(i, 'Cell') for i in ids]
         
         for i in ids:
-            img = self.load_data(i, 'Image')
+            img = self.load_data(i, target=target, z_level=z_level)
             img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             
             if mode == 'raw':
@@ -124,20 +124,20 @@ class CellVisualizer:
             
         return (X, Y) if annotation else X
 
-    def load_set(self, ids, mode='Cell', annotation = True):
+    def load_set(self, ids, target='Cell', annotation = True):
         X = []
         if annotation:
             Y = []
         
         for i in ids:
             # Chargement et normalisation de l'image
-            img = self.load_data(i, 'Image')
+            img = self.load_data(i, target='Image')
             img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             X.append(img_norm)
             
             # Chargement du masque correspondant
             if annotation:
-                mask = self.load_data(i, mode)
+                mask = self.load_data(i, target=target, z_level=z_level)
                 Y.append(mask)
             
         return (X, Y) if annotation else X
@@ -152,9 +152,83 @@ class CellVisualizer:
             X.append(img_norm)
   
         return X
-  
 
-    def plot(self, i=None, data=None, mode='Image', show=True, ax=None, title=None):
+    def load_set_z_relative(self, ids, df_meta, step, total_steps=12):
+        """
+        Charge les images en fonction d'un palier de profondeur relative (step).
+        step=0 : Granuleuse
+        step=total_steps-1 : Basale
+        """
+        X = []
+        for i in ids:
+            # 1. Trouver les bornes Z du stack dans le DataFrame
+            row = df_meta[df_meta['ImageFilename'].str.startswith(str(i))]
+            
+            if row.empty or pd.isna(row['granuleuse'].values[0]):
+                continue
+                
+            z_start = row['granuleuse'].values[0]
+            z_end = row['basale'].values[0]
+            
+            # 2. Calculer le Z exact pour cette étape spécifique
+            z_levels = np.round(np.linspace(z_start, z_end, total_steps)).astype(int)
+            z_target = z_levels[step]
+            
+            # 3. Chargement de l'image correspondante
+            img = self.load_data(i, 'Z', z_level=z_target)
+            if img is not None:
+                img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                X.append(img_norm)
+                
+        return X
+    
+    def load_channel_z_relative(self, ids, df_meta, step, total_steps=12, mode='raw'):
+        """
+        Prépare les données multi-canaux (2, H, W) pour Cellpose en Z-relatif.
+        Utilisé pour la propagation 3D.
+        
+        Modes disponibles : 
+        - 'raw' : Duplication de l'image (les deux canaux sont identiques).
+        - 'top_hat' : Amélioration des contours sombres sur le second canal.
+        """
+        X = []
+        
+        for i in ids:
+            # 1. Trouver les bornes Z du stack dans le DataFrame
+            row = df_meta[df_meta['ImageFilename'].str.startswith(str(i))]
+            
+            if row.empty or pd.isna(row['granuleuse'].values[0]):
+                continue
+                
+            z_start = row['granuleuse'].values[0]
+            z_end = row['basale'].values[0]
+            
+            # 2. Calculer le Z exact pour cette étape spécifique
+            z_levels = np.round(np.linspace(z_start, z_end, total_steps)).astype(int)
+            z_target = z_levels[step]
+            
+            # 3. Chargement de l'image
+            img = self.load_data(i, 'Z', z_level=z_target)
+            if img is None:
+                continue
+                
+            img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            
+            # 4. Préparation du second canal
+            if mode == 'raw':
+                ch2 = img_norm
+                
+            elif mode == 'top_hat':
+                from skimage import morphology
+                fond_estime = morphology.area_closing(img_norm, area_threshold=500)
+                ch2 = cv2.subtract(fond_estime, img_norm)
+        
+            X.append(np.stack([img_norm, ch2], axis=0))
+            
+        return X
+
+
+    def plot(self, i=None, data=None, target='Image', show=True, ax=None, title=None, z_level=None):
         """
         Affiche ou retourne un graphique les images et les masques
         """
@@ -162,9 +236,9 @@ class CellVisualizer:
         if data is not None:
             img = data
         elif i is not None:
-            img = self.load_data(i, mode=mode)
+            img = self.load_data(i, target=target, z_level=z_level)
 
-        if mode.lower() == 'image':
+        if target.lower() == 'image':
             cmap = 'gray'
             default_title = f"Image : {i}" if i is not None else "Image"
         else:
@@ -196,16 +270,23 @@ class CellVisualizer:
             cv2.drawContours(overlay, contours, -1, color, 1)
     
 
-    def plot_overlay(self, i, mask_pred=None, ax=None, show=True, mode='Cell', annotation=True, prediction=True):
-        img = self.load_data(i, mode='Image')
+    def plot_overlay(self, i, mask_pred=None, ax=None, show=True, target='Cell', annotation=True, prediction=True, z_level=None, image=None):
+
+        if image is not None:
+            img = image
+
+        elif target == 'Z':
+            img = self.load_data(i, target='Z', z_level=z_level)
+        else:
+            img = self.load_data(i, target='Image', z_level=z_level)
+
         img_rgb = cv2.cvtColor(cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U), cv2.COLOR_GRAY2RGB)
         overlay = img_rgb.copy()
 
         if annotation:
-            mask_true = self.load_data(i, mode=mode)
+            mask_true = self.load_data(i, target=target, z_level=z_level)
             self.add_contours(overlay, mask_true, (0, 255, 0))
 
-        # Ajout de la sécurité : on trace seulement si on a demandé la prédiction ET qu'on a fourni un masque
         if prediction and mask_pred is not None:
             self.add_contours(overlay, mask_pred, (255, 0, 0)) 
 
@@ -225,8 +306,8 @@ class CellVisualizer:
         if show: plt.show()
 
 
-    def plot_points_overlay(self, i, df_annotations=None, mask_pred=None, ax=None, show=True, annotation=True, prediction=True):
-        img = self.load_data(i, mode='Image')
+    def plot_points_overlay(self, i, df_annotations=None, mask_pred=None, ax=None, show=True, annotation=True, prediction=True, z_level=None):
+        img = self.load_data(i, target='Image', z_level=z_level)
         overlay = cv2.cvtColor(cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U), cv2.COLOR_GRAY2RGB)
         
         if annotation and df_annotations is not None:
@@ -338,7 +419,7 @@ class Stats:
         f1 = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
         return {"f1": float(f1), "ap": float(ap), "tp": int(tp), "fp": int(fp), "fn": int(fn)}
     
-    def compute_points_metrics(image_name, mask_pred, df_annotations):
+    def compute_points_metrics(self, image_name, mask_pred, df_annotations):
         """
         Calcule les métriques pour une image donnée.
         
@@ -347,11 +428,11 @@ class Stats:
         df_annotations : pd.DataFrame, le contenu complet du fichier CSV ImageJ
         """
         # 1. Extraction des points pour cette image spécifique
-        points = df_annotations[df_annotations['Image'] == image_name][['X', 'Y']].values
+        points = df_annotations[df_annotations['Image'].astype(str).str.startswith(str(image_name))][['X', 'Y']].values
         
         if len(points) == 0:
             num_preds = len(np.unique(mask_pred)) - 1
-            return {"tp": 0, "fp": num_preds, "fn": 0, "f1": 0.0}
+            return {"image": image_name, "tp": 0, "fp": num_preds, "fn": 0, "f1": 0.0}
 
         # 2. Identification des TP et FN
         tp = 0
@@ -524,5 +605,40 @@ class Stats:
         plt.suptitle(f"Analyse des performances : {model_name}", fontsize=14, fontweight='bold')
         plt.tight_layout()
         plt.show()
+
+        return df
+    
+    def global_report_point(self, results_list, model_name="Modèle"):
+        """
+        Agrège les résultats et affiche les statistiques globales (version texte).
+        """
+        if not results_list:
+            print("Aucun résultat à analyser.")
+            return None
+
+        import pandas as pd
+
+        df = pd.DataFrame(results_list)
+        
+        df['n_true_cells'] = df['tp'] + df['fn']
+
+        total_tp = df['tp'].sum()
+        total_fp = df['fp'].sum()
+        total_fn = df['fn'].sum()
+
+        global_f1 = (2 * total_tp) / (2 * total_tp + total_fp + total_fn) if (2 * total_tp + total_fp + total_fn) > 0 else 0
+        mean_f1 = df['f1'].mean()
+
+        print(f"\n{'='*50}")
+        print(f"RESULTATS GLOBAUX : {model_name}")
+        print(f"{'='*50}")
+        print(f"Images evaluees          : {len(df)}")
+        print(f"Total Vrais Positifs (TP): {total_tp}")
+        print(f"Total Faux Positifs (FP) : {total_fp}")
+        print(f"Total Faux Negatifs (FN) : {total_fn}")
+        print("-" * 50)
+        print(f"F1-Score Global (Micro)  : {global_f1:.3f}")
+        print(f"F1-Score Moyen (Macro)   : {mean_f1:.3f}")
+        print(f"{'='*50}\n")
 
         return df
