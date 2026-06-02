@@ -13,10 +13,10 @@ import pandas as pd
 
 class CellVisualizer:
     def __init__(self, 
-                #  img_dir='./data/1-Images/01-Data/', 
-                img_dir='./data/03-Base complète SG/',
+                img_dir='./data/1-Images/01-Data/', 
+                # img_dir='./data/03-Base complète SG/',
                 #  img_dir='./data/04-Base complète SB/',
-                 ann_dir='./data/2-Annotations/02-Annotations-clean/',
+                 ann_dir='./data/2-Annotations/02-Annotations/',
                  nuc_dir = './data/02-Annotations_Clean/',
                  nuc_pred_dir='./data/prediction/cellpose_nuclei_200_train/masks/',
                  cell_pred_dir='./data/prediction/cellpose4_50/',
@@ -36,50 +36,62 @@ class CellVisualizer:
     
 
     def load_data(self, id_unique, target='Image', z_level=None):
-        if target == 'Cell':
-            pattern = f"{id_unique}*Cell.bmp"
-            p = self._get_path(self.ann_dir, pattern)
+            # 1. On nettoie id_unique au cas où il contiendrait déjà une extension
+            id_clean = str(id_unique).replace('.bmp', '').replace('.png', '').replace('.tif', '')
             
-        elif target == 'Nuc':
-            pattern = f"{id_unique}*Nuc.bmp"
-            p = self._get_path(self.nuc_dir, pattern)
+            # 2. Utilisation agressive des astérisques '*' pour que le pattern matche à coup sûr
+            if target == 'Cell':
+                pattern = f"{id_clean}*Cell*.bmp"
+                p = self._get_path(self.ann_dir, pattern)
+                
+            elif target == 'Nuc':
+                pattern = f"{id_clean}*Nuc*.bmp"
+                p = self._get_path(self.nuc_dir, pattern)
+                
+            elif target == 'Cell_Pred':
+                pattern = f"{id_clean}*Cell_pred*.bmp"
+                p = self._get_path(self.cell_pred_dir, pattern)
+                
+            elif target == 'Nuc_Pred':
+                pattern = f"{id_clean}*Nuc_pred*.bmp"
+                p = self._get_path(self.nuc_pred_dir, pattern)
             
-        elif target == 'Cell_Pred':
-            pattern = f"{id_unique}*Cell_pred.bmp"
-            p = self._get_path(self.cell_pred_dir, pattern)
-            
-        elif target == 'Nuc_Pred':
-            pattern = f"{id_unique}*Nuc_pred.bmp"
-            p = self._get_path(self.nuc_pred_dir, pattern)
-        
-        elif target == 'Z':
-            pattern = f"{id_unique}*z{int(z_level):03d}*"
-            p = self._get_path(self.z_stack_dir, pattern)
+            elif target == 'Z':
+                pattern = f"{id_clean}*z{int(z_level):03d}*"
+                p = self._get_path(self.z_stack_dir, pattern)
 
-        else: # Image
-            pattern = f"{id_unique}*"
-            p = self._get_path(self.img_dir, pattern)
-        
-        img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
-        if img is None: return None
+            else: # Image
+                pattern = f"{id_clean}*"
+                p = self._get_path(self.img_dir, pattern)
+            
+            # 3. SECURITÉ : Ne plus jamais renvoyer "None" silencieusement
+            if p is None:
+                print(f"⚠️ ERREUR : Fichier masque introuvable pour l'ID '{id_clean}' avec la cible '{target}'")
+                return None
+                
+            # 4. Lecture de l'image
+            img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+            
+            if img is None:
+                print(f"⚠️ ERREUR : Le fichier a été trouvé ({p}) mais OpenCV refuse de le lire.")
+                return None
 
-        # SI C'EST UN MASQUE ET QU'IL EST EN COULEUR (RGB)
-        if target in ['Cell', 'Nuc', 'Cell_Pred', 'Nuc_Pred'] and img.ndim == 3:
-            # On transforme le RGB en un ID unique de 24 bits (R + G*256 + B*256^2)
-            # C'est la méthode la plus sûre pour ne perdre aucune cellule BMP
-            label_img = img[:,:,0].astype(np.int32) + \
-                        img[:,:,1].astype(np.int32) * 256 + \
-                        img[:,:,2].astype(np.int32) * 256**2
-            
-            # On re-mappe ces IDs géants vers des labels simples (0, 1, 2, 3...)
-            unique_ids = np.unique(label_img)
-            new_mask = np.zeros(label_img.shape, dtype=np.uint16)
-            for i, val in enumerate(unique_ids):
-                if val == 0: continue # Fond
-                new_mask[label_img == val] = i
-            return new_mask
-            
-        return img
+            # 5. Conversion RGB vers un masque 2D (Label Encoding)
+            if target in ['Cell', 'Nuc', 'Cell_Pred', 'Nuc_Pred'] and img.ndim == 3:
+                # On transforme le RGB en un ID unique
+                label_img = img[:,:,0].astype(np.int32) + \
+                            img[:,:,1].astype(np.int32) * 256 + \
+                            img[:,:,2].astype(np.int32) * 256**2
+                
+                # On re-mappe vers des labels simples (0, 1, 2...)
+                unique_ids = np.unique(label_img)
+                new_mask = np.zeros(label_img.shape, dtype=np.uint16)
+                for i, val in enumerate(unique_ids):
+                    if val == 0: continue # Le fond reste 0
+                    new_mask[label_img == val] = i
+                return new_mask
+                
+            return img
 
     def load_channel(self, ids, mode='raw', target = 'Image', annotation = True, z_level=None):
         """
@@ -111,7 +123,7 @@ class CellVisualizer:
                 ch2 = creux_norm - img_norm
                 
             elif mode == 'Nuc_Pred':
-                nuc_mask = self.load_data(i, mode='Nuc_Pred')
+                nuc_mask = self.load_data(i, target='Nuc_Pred')
                 binary_nuc = (nuc_mask > 0).astype(np.uint8)
                 
                 if binary_nuc.max() > 0:
@@ -124,14 +136,14 @@ class CellVisualizer:
             
         return (X, Y) if annotation else X
 
-    def load_set(self, ids, target='Cell', annotation = True):
+    def load_set(self, ids, target='Cell', annotation = True, z_level=None):
         X = []
         if annotation:
             Y = []
         
         for i in ids:
             # Chargement et normalisation de l'image
-            img = self.load_data(i, target='Image')
+            img = self.load_data(i, target='Image', z_level=z_level)
             img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             X.append(img_norm)
             
@@ -335,21 +347,76 @@ class CellVisualizer:
         ax.axis('off')
         if show: plt.show()
 
-    def plot_loss(self, t_loss, v_loss, title="Courbe de Loss", ax=None, show=True):
-        """Trace les courbes d'apprentissage (Train vs Val)"""
+
+    def plot_loss(self, t_loss, v_loss, title="Model Convergence", save_path=None, ax=None, show=True):
+        """
+        Trace les courbes d'apprentissage (Train vs Val) avec un rendu académique.
+        Sauvegarde les données en JSON et ajuste l'échelle Y sans masquer de points.
+        """
+       
+        # 2. Configuration de la figure
         if ax is None:
-            fig, ax = plt.subplots(figsize=(5, 3))
+            fig, ax = plt.subplots(figsize=(6, 4))
+        else:
+            fig = ax.figure
+
+        # 3. Alignement des axes X
+        total_epochs = len(t_loss)
+        epochs_t = np.arange(1, total_epochs + 1)
+        
+        # Trace le Train (Bleu académique)
+        ax.plot(epochs_t, t_loss, label='Training Loss', color='#0072B2', 
+                linewidth=2, marker='o', markersize=4, zorder=3)
+
+        # Trace la Validation (Violet Améthyste)
+        if v_loss is not None and len(v_loss) > 0:
+            epochs_v = np.linspace(1, total_epochs, len(v_loss))
+            ax.plot(epochs_v, v_loss, label='Validation Loss', color='#9B59B6', 
+                    linewidth=2, linestyle='--', marker='s', markersize=4, zorder=3)
+
+        # 4. Ajustement intelligent de l'axe Y (Sans couper les données)
+        # On calcule la médiane et l'écart interquartile pour repérer un pic anormal
+        all_losses = t_loss + (v_loss if v_loss is not None else [])
+        
+        if len(all_losses) > 5:
+            q1 = np.percentile(all_losses, 25)
+            q3 = np.percentile(all_losses, 75)
+            iqr = q3 - q1
             
-        ax.plot(t_loss, label='Train Loss', color='blue', marker='o', markersize=4)
-        ax.plot(v_loss, label='Test Loss (Val)', color='orange', marker='s', markersize=4)
+            # Le "plafond" d'affichage naturel (outliers ignorés pour l'échelle)
+            upper_limit = q3 + 2.5 * iqr 
+            
+            # Le max absolu des données
+            true_max = max(all_losses)
+            
+            # Si un point est vraiment trop haut (pic initial), on limite l'axe Y
+            # Les points seront toujours tracés, mais la ligne sortira "proprement" par le haut du cadre
+            if true_max > upper_limit:
+                ax.set_ylim(bottom=0, top=upper_limit)
+            else:
+                ax.set_ylim(bottom=0) # Sinon, on part juste de 0
+
+        # 5. Esthétique Qualité Publication
+        ax.set_title(title, fontsize=12, fontweight='bold', pad=15)
+        ax.set_xlabel("Epochs", fontsize=11, fontweight='bold')
+        ax.set_ylabel("Loss", fontsize=11, fontweight='bold')
         
-        ax.set_title(title)
-        ax.set_xlabel("Epochs")
-        ax.set_ylabel("Loss")
-        ax.legend()
-        ax.grid(True, linestyle='--', alpha=0.7)
+        # Nettoyage des bordures
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_linewidth(1.2)
+        ax.spines['bottom'].set_linewidth(1.2)
         
-        if show: plt.show()
+        # Grille discrète en arrière-plan
+        ax.grid(True, linestyle=':', alpha=0.6, zorder=0)
+        
+        ax.legend(frameon=False, fontsize=10)
+        
+        plt.tight_layout()
+        
+        if show: 
+            plt.show()
+            
         return ax
 
 class Owncloud:
