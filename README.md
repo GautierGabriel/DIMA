@@ -35,7 +35,15 @@ ces blocs sont inutiles si les données sont déjà présentes sur le serveur, m
 
 
 
-Pour exécuter les scripts : placez les données sur le serveur et mettez à jour les chemins dans `scripts/tool.py` (paramètres de `CellVisualizer` et autres chemins d'entrée/sortie).
+Pour exécuter les scripts : 
+
+Placez les models preentrainnee dans le dossier `models/` 
+
+Mettre a jour les path des models dans `benchmark.py`, dans la partie configuration (e.g : ` "model_path": "./models/cyto4_40_raw.pth" `
+
+placez les données sur le serveur dans `data\`
+
+mettez à jour les chemins dans `scripts/tool.py` (paramètres de `CellVisualizer` et autres chemins d'entrée/sortie).
 
 Extrait des chemins par défaut utilisés par `CellVisualizer` :
 
