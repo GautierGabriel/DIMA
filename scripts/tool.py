@@ -36,10 +36,8 @@ class CellVisualizer:
     
 
     def load_data(self, id_unique, target='Image', z_level=None):
-            # 1. On nettoie id_unique au cas où il contiendrait déjà une extension
             id_clean = str(id_unique).replace('.bmp', '').replace('.png', '').replace('.tif', '')
             
-            # 2. Utilisation agressive des astérisques '*' pour que le pattern matche à coup sûr
             if target == 'Cell':
                 pattern = f"{id_clean}*Cell*.bmp"
                 p = self._get_path(self.ann_dir, pattern)
@@ -64,26 +62,22 @@ class CellVisualizer:
                 pattern = f"{id_clean}*"
                 p = self._get_path(self.img_dir, pattern)
             
-            # 3. SECURITÉ : Ne plus jamais renvoyer "None" silencieusement
             if p is None:
-                print(f"⚠️ ERREUR : Fichier masque introuvable pour l'ID '{id_clean}' avec la cible '{target}'")
+                print(f"ERREUR : file not found'{id_clean}' '{target}'")
                 return None
                 
             # 4. Lecture de l'image
             img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
             
             if img is None:
-                print(f"⚠️ ERREUR : Le fichier a été trouvé ({p}) mais OpenCV refuse de le lire.")
+                print(f"ERREUR: file  found ({p}) but OpenCV dont open it")
                 return None
 
-            # 5. Conversion RGB vers un masque 2D (Label Encoding)
             if target in ['Cell', 'Nuc', 'Cell_Pred', 'Nuc_Pred'] and img.ndim == 3:
-                # On transforme le RGB en un ID unique
                 label_img = img[:,:,0].astype(np.int32) + \
                             img[:,:,1].astype(np.int32) * 256 + \
                             img[:,:,2].astype(np.int32) * 256**2
                 
-                # On re-mappe vers des labels simples (0, 1, 2...)
                 unique_ids = np.unique(label_img)
                 new_mask = np.zeros(label_img.shape, dtype=np.uint16)
                 for i, val in enumerate(unique_ids):
@@ -507,8 +501,7 @@ class Stats:
         labels_detected = set()
         
         for x, y in points:
-            # Conversion coordonnées ImageJ (float) vers indices NumPy (int)
-            # Note : X = colonne, Y = ligne
+
             row, col = int(round(y)), int(round(x))
             
             # Vérification des limites de l'image
@@ -521,14 +514,11 @@ class Stats:
                 else:
                     fn += 1
             else:
-                fn += 1 # Point hors cadre considéré comme non détecté
+                fn += 1 
 
-        # 3. Identification des FP
-        # Total des objets prédits moins ceux qui ont été validés par un point
         total_pred_labels = len(np.unique(mask_pred)) - 1
         fp = max(0, total_pred_labels - len(labels_detected))
 
-        # 4. Calcul du score F1
         f1 = (2 * tp) / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
         
         return {
@@ -548,10 +538,8 @@ class Stats:
         f1_scores = []
         fn_counts = []
         
-        # Vérification du type d'entrée (Batch vs Image unique)
         is_batch = isinstance(mask_true, list) or (isinstance(mask_true, np.ndarray) and mask_true.ndim == 3)
         
-        # Itération sur la plage de tolérance
         for thresh in thresholds:
             if is_batch:
                 total_tp, total_fp, total_fn = 0, 0, 0
@@ -563,7 +551,6 @@ class Stats:
                     total_fp += perf['fp']
                     total_fn += perf['fn']
                     
-                # Calcul du F1-Score global pour le seuil courant
                 if (total_tp + total_fp + total_fn) > 0:
                     precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
                     recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
@@ -575,32 +562,26 @@ class Stats:
                 fn_counts.append(total_fn)
                 
             else:
-                # Comportement original pour une image unique
                 perf = self.summary_perf(mask_true, mask_pred, iou_threshold=thresh)
                 f1_scores.append(perf["f1"])
                 fn_counts.append(perf["fn"])
                 
-        # Création ou récupération des axes de tracé
         if ax is None:
             fig, (ax_f1, ax_fn) = plt.subplots(1, 2, figsize=(16, 5))
             ax_f1.set_title("F1-Score vs IoU")
             ax_fn.set_title("Faux Négatifs vs IoU")
         else:
-            # Dépaquetage du tuple d'axes
             ax_f1, ax_fn = ax
             
-        # Tracé des courbes (conservation de la couleur entre les deux graphiques)
         line, = ax_f1.plot(thresholds, f1_scores, marker='o', linewidth=2)
         ax_fn.plot(thresholds, fn_counts, marker='s', linestyle='--', linewidth=2, color=line.get_color())
         
-        # Formatage du graphique F1
         ax_f1.set_xlabel('Seuil de tolérance (IoU)')
         ax_f1.set_ylabel('F1-Score')
         ax_f1.set_xlim(0.45, 1.05)
         ax_f1.set_ylim(0.0, 1.05)
         ax_f1.grid(True, linestyle='--', alpha=0.7)
         
-        # Formatage du graphique FN
         ax_fn.set_xlabel('Seuil de tolérance (IoU)')
         ax_fn.set_ylabel('Total Faux Négatifs (FN)')
         ax_fn.set_xlim(0.45, 1.05)
