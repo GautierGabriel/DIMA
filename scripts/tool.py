@@ -419,45 +419,45 @@ class CellVisualizer:
             
         return ax
 
-class Owncloud:
-    def __init__(self, client):
-        self.oc = client 
-    def upload_data(self):
-        self.oc.get_directory_as_zip('/travail/Mines/DIMA/Segmentation/data', 'data.zip')
-        os.system('unzip -o -q data.zip -d . && rm data.zip')
+# class Owncloud:
+#     def __init__(self, client):
+#         self.oc = client 
+#     def upload_data(self):
+#         self.oc.get_directory_as_zip('/travail/Mines/DIMA/Segmentation/data', 'data.zip')
+#         os.system('unzip -o -q data.zip -d . && rm data.zip')
 
-    def upload_scripts(self):
-        self.oc.get_directory_as_zip('/travail/Mines/DIMA/Segmentation/scripts', 'scripts.zip')
-        os.system('unzip -o -q scripts.zip -d . && rm scripts.zip')
+#     def upload_scripts(self):
+#         self.oc.get_directory_as_zip('/travail/Mines/DIMA/Segmentation/scripts', 'scripts.zip')
+#         os.system('unzip -o -q scripts.zip -d . && rm scripts.zip')
 
-    def upload_models(self):
-        self.oc.get_directory_as_zip('/travail/Mines/DIMA/Segmentation/results/models', 'models.zip')
-        os.system('unzip -o -q models.zip -d . && rm models.zip')
+#     def upload_models(self):
+#         self.oc.get_directory_as_zip('/travail/Mines/DIMA/Segmentation/results/models', 'models.zip')
+#         os.system('unzip -o -q models.zip -d . && rm models.zip')
 
-    def download_results(self):
-        tag = datetime.now().strftime("%Y-%m-%d_%Hh%M")
-        name = f"resultats_{tag}"
-        shutil.make_archive(name, 'zip', './data/processed/')
-        path = '/travail/Mines/DIMA/Segmentation/data/processed/'
-        try: self.oc.mkdir(path)
-        except: pass
-        self.oc.put_file(f"{path}{name}.zip", f"{name}.zip")
-        os.remove(f"{name}.zip")
-        print(f"Envoyé: {name}.zip")
+#     def download_results(self):
+#         tag = datetime.now().strftime("%Y-%m-%d_%Hh%M")
+#         name = f"resultats_{tag}"
+#         shutil.make_archive(name, 'zip', './data/processed/')
+#         path = '/travail/Mines/DIMA/Segmentation/data/processed/'
+#         try: self.oc.mkdir(path)
+#         except: pass
+#         self.oc.put_file(f"{path}{name}.zip", f"{name}.zip")
+#         os.remove(f"{name}.zip")
+#         print(f"Envoyé: {name}.zip")
 
-    def download_path(self, local_path, cloud_dest):
-            """Zippe un dossier local et l'envoie sur le Cloud"""
-            name = os.path.basename(local_path.rstrip('/'))
+#     def download_path(self, local_path, cloud_dest):
+#             """Zippe un dossier local et l'envoie sur le Cloud"""
+#             name = os.path.basename(local_path.rstrip('/'))
             
-            shutil.make_archive(name, 'zip', local_path)
+#             shutil.make_archive(name, 'zip', local_path)
             
-            try: self.oc.mkdir(os.path.dirname(cloud_dest))
-            except: pass
+#             try: self.oc.mkdir(os.path.dirname(cloud_dest))
+#             except: pass
             
-            self.oc.put_file(f"{cloud_dest}.zip", f"{name}.zip")
-            os.remove(f"{name}.zip")
+#             self.oc.put_file(f"{cloud_dest}.zip", f"{name}.zip")
+#             os.remove(f"{name}.zip")
             
-            print(f"Dossier {name} envoyé vers {cloud_dest}.zip")
+#             print(f"Dossier {name} envoyé vers {cloud_dest}.zip")
 
 
 class Stats:
