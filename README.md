@@ -3,15 +3,35 @@ Segmentation — README
 
 Ce dépôt contient des scripts pour entraîner et évaluer des modèles de segmentation sur la base de données locale.
 
+dossier scripts :
+
 - **Benchmark** : lance les modèles choisis sur l'ensemble de la base et sauve les mask et visualisations.
 - **Scripts d'entraînement** : cellpose3_nuc, cellpose3, cellpose4 (notebooks/scripts d'entraînement pour Cellpose v3/v4).
 - **Outils** : `scripts/tool.py` regroupe le visualiseur, les calculs de statistiques et le calcul du loss.
 - **Pré-traitements** : `Nuclei_preprocessing.py` préparent les annotaions de noyaux pour l entrainement (nettoyage des masques)
 
-Remarque : plusieurs scripts contiennent en tête des blocs de code commentés (OwnCloud/Nextcloud) servant à téléverser les données depuis Nextcloud . 
+Fichiers :
+-dataset_splits.json : description des id des images a utliser pour la base de train val et test
+-Nuclei.csv : contient les annotaions ( positions x,y) de noyaux pour les images de la granuleuse
+
+Remarque : plusieurs scripts contiennent en tête des blocs de code commentés (OwnCloud/Nextcloud) servant à téléverser les données depuis Nextcloud.
 ces blocs sont inutiles si les données sont déjà présentes sur le serveur, mais peuvent être utiles pour téléverser les données depuis Nextcloud si besoin.
 
-# # USEFUL TO UPLOAD DATA TO OWNCLLOUD, BUT NOT NEEDED FOR THE TOOL IF DATA IS ALREADY ON THE SERVER
+```python
+# USEFUL TO UPLOAD DATA TO OWNCLLOUD, BUT NOT NEEDED FOR THE TOOL IF DATA IS ALREADY ON THE SERVER
+# import owncloud, getpass, cellpose
+# 
+# # Config
+# url, user = 'url', 'user'
+# oc_session = owncloud.Client(url)
+# oc_session.login(user, getpass.getpass(f"PW {user}: "))
+# oc_session.get_file('/travail/Mines/DIMA/Segmentation/scripts/tool.py', 'tool.py')
+# 
+# import tool
+# oc = tool.Owncloud(oc_session)
+# 
+# print("Tool chargé et prêt.")
+```
 
 
 
@@ -19,6 +39,7 @@ Pour exécuter les scripts : placez les données sur le serveur et mettez à jou
 
 Extrait des chemins par défaut utilisés par `CellVisualizer` :
 
+```python
 class CellVisualizer:
     def __init__(self, 
                 img_dir='./data/1-Images/01-Data/', # for the input raw images
@@ -39,4 +60,5 @@ class CellVisualizer:
             return next(folder.rglob(pattern))
         except StopIteration:
             return None
+```
 
