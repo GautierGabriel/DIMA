@@ -1,4 +1,7 @@
-Segmentation — README
+Segmentation
+
+LIEN VERS LES MODELE :
+ https://loreal.sharepoint.com/:f:/r/sites/-FR-LOralCMMMMP/Documents%20partages/General/2026%20Stage%20DIMA%20Recherche%20Gabriel%20GAUTIER/02-REUNIONS%20%26%20RESULTS/2026.06.02%20Model%20Weights?csf=1&web=1&e=y1i2Wc
 
 
 Ce dépôt contient des scripts pour entraîner et évaluer des modèles de segmentation sur la base de données locale.
@@ -11,7 +14,9 @@ dossier scripts :
 - **Pré-traitements** : `Nuclei_preprocessing.py` préparent les annotaions de noyaux pour l entrainement (nettoyage des masques)
 
 Fichiers :
+
 -dataset_splits.json : description des id des images a utliser pour la base de train val et test
+
 -Nuclei.csv : contient les annotaions ( positions x,y) de noyaux pour les images de la granuleuse
 
 Remarque : plusieurs scripts contiennent en tête des blocs de code commentés (OwnCloud/Nextcloud) servant à téléverser les données depuis Nextcloud.
